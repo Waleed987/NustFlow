@@ -189,26 +189,3 @@ function updateToggleStatus(isEnabled) {
         : 'Auto-login is disabled';
     toggleStatus.style.color = isEnabled ? '#27ae60' : '#e74c3c';
 }
-
-// CGPA Privacy Toggle
-const showCgpaToggle = document.getElementById('showCgpaToggle');
-
-if (showCgpaToggle) {
-    showCgpaToggle.addEventListener('change', () => {
-        const showCgpa = showCgpaToggle.checked;
-
-        chrome.storage.local.set({ showCgpa: showCgpa }, () => {
-            showStatus(
-                showCgpa ? '✓ CGPA will be visible' : '✓ CGPA will be hidden',
-                'info'
-            );
-        });
-    });
-
-    // Load CGPA toggle state on startup
-    chrome.storage.local.get('showCgpa', (result) => {
-        // Default to showing CGPA if not set
-        const showCgpa = result.showCgpa !== false;
-        showCgpaToggle.checked = showCgpa;
-    });
-}

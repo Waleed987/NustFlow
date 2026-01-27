@@ -54,15 +54,6 @@
                 "qalam.js"
             ],
             "run_at": "document_idle"
-        },
-        {
-            "matches": [
-                "https://qalam.nust.edu.pk/student/dashboard*"
-            ],
-            "js": [
-                "cgpa-privacy.js"
-            ],
-            "run_at": "document_end"
         }
     ]
 }
