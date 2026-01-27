@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "NUST Auto-Login",
+    "name": "NustFlow",
     "version": "1.0.0",
-    "description": "Automatically fill and submit login credentials for NUST LMS and Qalam portals",
+    "description": "Provides automatic login and credential management for NUST LMS and Qalam portals with secure storage",
     "permissions": [
         "storage",
         "activeTab"
