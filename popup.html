@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NUST Auto-Login</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 NUST Auto-Login</h1>
+            <p class="subtitle">Secure credential management</p>
+        </div>
+
+        <div class="toggle-section">
+            <div class="toggle-container">
+                <span class="toggle-label">Extension Enabled</span>
+                <label class="switch">
+                    <input type="checkbox" id="enableToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <p class="toggle-status" id="toggleStatus">Auto-login is active</p>
+        </div>
+
+        <div class="form-section">
+            <div class="input-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" placeholder="Enter your username" autocomplete="off">
+            </div>
+
+            <div class="input-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Enter your password" autocomplete="off">
+            </div>
+
+            <div class="button-group">
+                <button id="saveBtn" class="btn btn-primary">
+                    <span class="btn-icon">💾</span>
+                    Save Credentials
+                </button>
+                <button id="clearBtn" class="btn btn-secondary">
+                    <span class="btn-icon">🗑️</span>
+                    Clear
+                </button>
+            </div>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <div class="footer">
+            <p>🔒 All data stored locally in your browser</p>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
