@@ -6,6 +6,8 @@ const clearBtn = document.getElementById('clearBtn');
 const statusDiv = document.getElementById('status');
 const enableToggle = document.getElementById('enableToggle');
 const toggleStatus = document.getElementById('toggleStatus');
+const cgpaToggle = document.getElementById('cgpaToggle');
+const cgpaStatus = document.getElementById('cgpaStatus');
 const qalamSameToggle = document.getElementById('qalamSameToggle');
 const qalamFields = document.getElementById('qalamFields');
 const qalamUsernameInput = document.getElementById('qalamUsername');
@@ -15,6 +17,7 @@ const qalamPasswordInput = document.getElementById('qalamPassword');
 document.addEventListener('DOMContentLoaded', () => {
     loadCredentials();
     loadToggleState();
+    loadCgpaToggleState();
     loadQalamToggleState();
 });
 
@@ -144,6 +147,19 @@ enableToggle.addEventListener('change', () => {
     });
 });
 
+// Toggle CGPA visibility
+cgpaToggle.addEventListener('change', () => {
+    const hideCgpa = cgpaToggle.checked;
+
+    chrome.storage.local.set({ hideCgpa: hideCgpa }, () => {
+        updateCgpaStatus(hideCgpa);
+        showStatus(
+            hideCgpa ? '✓ CGPA will be hidden' : '✓ CGPA will be shown',
+            'info'
+        );
+    });
+});
+
 // Toggle Qalam same/different credentials
 qalamSameToggle.addEventListener('change', () => {
     const useSame = qalamSameToggle.checked;
@@ -164,6 +180,16 @@ function loadToggleState() {
         const isEnabled = result.extensionEnabled !== false;
         enableToggle.checked = isEnabled;
         updateToggleStatus(isEnabled);
+    });
+}
+
+// Load CGPA toggle state
+function loadCgpaToggleState() {
+    chrome.storage.local.get('hideCgpa', (result) => {
+        // Default to showing CGPA (hideCgpa = false)
+        const hideCgpa = result.hideCgpa || false;
+        cgpaToggle.checked = hideCgpa;
+        updateCgpaStatus(hideCgpa);
     });
 }
 
@@ -188,4 +214,12 @@ function updateToggleStatus(isEnabled) {
         ? 'Auto-login is active'
         : 'Auto-login is disabled';
     toggleStatus.style.color = isEnabled ? '#27ae60' : '#e74c3c';
+}
+
+// Update CGPA toggle status text
+function updateCgpaStatus(isHidden) {
+    cgpaStatus.textContent = isHidden
+        ? 'CGPA is hidden'
+        : 'CGPA is visible';
+    cgpaStatus.style.color = isHidden ? '#e74c3c' : '#27ae60';
 }
