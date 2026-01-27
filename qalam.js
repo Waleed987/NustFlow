@@ -1,25 +1,25 @@
-// NUST Auto-Login Content Script - Optimized Version
-// This script runs on lms.nust.edu.pk/portal/* pages
+// NUST Qalam Auto-Login Content Script
+// This script runs on qalam.nust.edu.pk/web/login
 
-console.log('NUST Auto-Login: Content script loaded');
+console.log('NUST Qalam Auto-Login: Content script loaded');
 
 // Run immediately when script loads
-initAutoLogin();
+initQalamAutoLogin();
 
 // Also run on DOMContentLoaded as backup
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAutoLogin);
+    document.addEventListener('DOMContentLoaded', initQalamAutoLogin);
 }
 
-function initAutoLogin() {
-    console.log('NUST Auto-Login: Initializing auto-login');
+function initQalamAutoLogin() {
+    console.log('NUST Qalam Auto-Login: Initializing auto-login');
 
     // Check login attempt count
-    const attemptKey = 'lms_login_attempts';
+    const attemptKey = 'qalam_login_attempts';
     const attempts = parseInt(sessionStorage.getItem(attemptKey) || '0');
 
     if (attempts >= 2) {
-        console.log('NUST Auto-Login: Max login attempts reached (2), stopping auto-login');
+        console.log('NUST Qalam Auto-Login: Max login attempts reached (2), stopping auto-login');
         return;
     }
 
@@ -32,7 +32,7 @@ function initAutoLogin() {
 
 function findElementsWithRetry(attempt) {
     if (attempt > 3) {
-        console.log('NUST Auto-Login: Max retry attempts reached');
+        console.log('NUST Qalam Auto-Login: Max retry attempts reached');
         return;
     }
 
@@ -40,7 +40,7 @@ function findElementsWithRetry(attempt) {
     const passwordField = findPasswordField();
     const loginButton = findLoginButton();
 
-    console.log(`NUST Auto-Login: Attempt ${attempt + 1} - Found:`, {
+    console.log(`NUST Qalam Auto-Login: Attempt ${attempt + 1} - Found:`, {
         username: !!usernameField,
         password: !!passwordField,
         button: !!loginButton
@@ -56,51 +56,51 @@ function findElementsWithRetry(attempt) {
 
 function fillAndSubmit(usernameField, passwordField, loginButton) {
     // Get credentials and enabled state from storage
-    chrome.storage.local.get(['nustCredentials', 'extensionEnabled'], async (result) => {
+    chrome.storage.local.get(['qalamCredentials', 'extensionEnabled'], async (result) => {
         // Check if extension is enabled (default to true if not set)
         const isEnabled = result.extensionEnabled !== false;
 
         if (!isEnabled) {
-            console.log('NUST Auto-Login: Extension is disabled, skipping auto-login');
+            console.log('NUST Qalam Auto-Login: Extension is disabled, skipping auto-login');
             return;
         }
 
-        if (result.nustCredentials) {
-            const { username, password: encryptedPassword } = result.nustCredentials;
-            console.log('NUST Auto-Login: Credentials found in storage');
+        if (result.qalamCredentials) {
+            const { username, password: encryptedPassword } = result.qalamCredentials;
+            console.log('NUST Qalam Auto-Login: Credentials found in storage');
 
             // Decrypt password
             const password = await decryptPassword(encryptedPassword);
 
             if (!password) {
-                console.log('NUST Auto-Login: Failed to decrypt password');
+                console.log('NUST Qalam Auto-Login: Failed to decrypt password');
                 return;
             }
 
             // Check if fields are empty (not already filled)
             if (!usernameField.value && !passwordField.value) {
-                console.log('NUST Auto-Login: Filling credentials');
+                console.log('NUST Qalam Auto-Login: Filling credentials');
 
                 // Fill both fields immediately
                 fillField(usernameField, username);
                 fillField(passwordField, password);
 
-                console.log('NUST Auto-Login: Credentials filled');
+                console.log('NUST Qalam Auto-Login: Credentials filled');
 
                 // Click login button with delay for validation
                 if (loginButton) {
                     setTimeout(() => {
-                        console.log('NUST Auto-Login: Clicking login button');
+                        console.log('NUST Qalam Auto-Login: Clicking login button');
                         loginButton.click();
                     }, 500);
                 } else {
-                    console.log('NUST Auto-Login: Login button not found, credentials filled only');
+                    console.log('NUST Qalam Auto-Login: Login button not found, credentials filled only');
                 }
             } else {
-                console.log('NUST Auto-Login: Fields already filled, skipping');
+                console.log('NUST Qalam Auto-Login: Fields already filled, skipping');
             }
         } else {
-            console.log('NUST Auto-Login: No credentials saved');
+            console.log('NUST Qalam Auto-Login: No credentials saved');
         }
     });
 }
@@ -184,7 +184,7 @@ function findFirstVisible(selectors) {
         try {
             const element = document.querySelector(selector);
             if (element && isVisible(element)) {
-                console.log('NUST Auto-Login: Found element with selector:', selector);
+                console.log('NUST Qalam Auto-Login: Found element with selector:', selector);
                 return element;
             }
         } catch (e) {

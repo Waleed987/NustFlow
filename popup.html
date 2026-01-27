@@ -27,6 +27,8 @@
         </div>
 
         <div class="form-section">
+            <h3 class="section-title">📚 LMS Credentials</h3>
+
             <div class="input-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" placeholder="Enter your username" autocomplete="off">
@@ -36,6 +38,44 @@
                 <label for="password">Password</label>
                 <input type="password" id="password" placeholder="Enter your password" autocomplete="off">
             </div>
+
+            <div class="divider"></div>
+
+            <h3 class="section-title">🎓 Qalam Credentials</h3>
+
+            <div class="toggle-container qalam-toggle">
+                <span class="toggle-label">Same as LMS</span>
+                <label class="switch">
+                    <input type="checkbox" id="qalamSameToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div id="qalamFields" class="qalam-fields hidden">
+                <div class="input-group">
+                    <label for="qalamUsername">Qalam Username</label>
+                    <input type="text" id="qalamUsername" placeholder="Enter Qalam username" autocomplete="off">
+                </div>
+
+                <div class="input-group">
+                    <label for="qalamPassword">Qalam Password</label>
+                    <input type="password" id="qalamPassword" placeholder="Enter Qalam password" autocomplete="off">
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <h3 class="section-title">👁️ Privacy Settings</h3>
+
+            <div class="toggle-container qalam-toggle">
+                <span class="toggle-label">Show CGPA on Qalam</span>
+                <label class="switch">
+                    <input type="checkbox" id="showCgpaToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <p class="toggle-status" style="font-size: 11px; color: #7f8c8d; margin-top: 4px;">Hide your CGPA from Qalam
+                dashboard for privacy</p>
 
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-primary">
@@ -56,6 +96,7 @@
         </div>
     </div>
 
+    <script src="encryption.js"></script>
     <script src="popup.js"></script>
 </body>
 

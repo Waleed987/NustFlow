@@ -12,11 +12,16 @@ chrome.storage.local.get('extensionEnabled', (result) => {
         return;
     }
 
-    // Check if we're on the index page
-    if (window.location.href.includes('lms.nust.edu.pk/lms/index.php')) {
+    // Check if we're on the index page (with or without www)
+    const currentUrl = window.location.href;
+    if (currentUrl.includes('lms.nust.edu.pk/lms/index.php')) {
         console.log('NUST Auto-Redirect: Detected index page, redirecting to portal...');
 
-        // Redirect immediately to portal
-        window.location.href = 'https://lms.nust.edu.pk/portal/';
+        // Redirect to portal (use the same subdomain as current page)
+        const targetUrl = currentUrl.includes('www.')
+            ? 'https://www.lms.nust.edu.pk/portal/'
+            : 'https://lms.nust.edu.pk/portal/';
+
+        window.location.href = targetUrl;
     }
 });

@@ -2,13 +2,15 @@
     "manifest_version": 3,
     "name": "NUST Auto-Login",
     "version": "1.0.0",
-    "description": "Automatically fill and submit login credentials for NUST LMS portal",
+    "description": "Automatically fill and submit login credentials for NUST LMS and Qalam portals",
     "permissions": [
         "storage",
         "activeTab"
     ],
     "host_permissions": [
-        "https://lms.nust.edu.pk/*"
+        "https://lms.nust.edu.pk/*",
+        "https://www.lms.nust.edu.pk/*",
+        "https://qalam.nust.edu.pk/*"
     ],
     "action": {
         "default_popup": "popup.html",
@@ -26,7 +28,8 @@
     "content_scripts": [
         {
             "matches": [
-                "https://lms.nust.edu.pk/portal/*"
+                "https://lms.nust.edu.pk/portal/*",
+                "https://www.lms.nust.edu.pk/portal/*"
             ],
             "js": [
                 "content.js"
@@ -35,10 +38,29 @@
         },
         {
             "matches": [
-                "https://lms.nust.edu.pk/lms/index.php*"
+                "https://lms.nust.edu.pk/lms/index.php*",
+                "https://www.lms.nust.edu.pk/lms/index.php*"
             ],
             "js": [
                 "redirect.js"
+            ],
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "https://qalam.nust.edu.pk/web/login*"
+            ],
+            "js": [
+                "qalam.js"
+            ],
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
+                "https://qalam.nust.edu.pk/student/dashboard*"
+            ],
+            "js": [
+                "cgpa-privacy.js"
             ],
             "run_at": "document_end"
         }
