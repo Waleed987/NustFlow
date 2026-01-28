@@ -4,8 +4,7 @@
     "version": "1.0.0",
     "description": "Save time with automatic login for NUST LMS and Qalam. Your credentials stay secure while you get instant access.",
     "permissions": [
-        "storage",
-        "activeTab"
+        "storage"
     ],
     "host_permissions": [
         "https://lms.nust.edu.pk/*",
