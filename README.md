@@ -49,12 +49,6 @@ A browser extension that automatically fills and submits your login Details for 
 - Try refreshing the page
 - Verify your credentials are correct
 
-## 📝 Notes
-
-- This extension only works on `lms.nust.edu.pk` domain
-- Credentials are tied to your browser profile
-- If you clear browser data, you'll need to re-enter credentials
-
 ---
 
 **Made with ❤️ for NUST students**
