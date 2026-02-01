@@ -87,12 +87,12 @@ function fillAndSubmit(usernameField, passwordField, loginButton) {
 
                 console.log('NUST Qalam Auto-Login: Credentials filled');
 
-                // Click login button with delay for validation
+                // Click login button when it's ready
                 if (loginButton) {
-                    setTimeout(() => {
+                    waitForButtonReady(loginButton, () => {
                         console.log('NUST Qalam Auto-Login: Clicking login button');
                         loginButton.click();
-                    }, 500);
+                    });
                 } else {
                     console.log('NUST Qalam Auto-Login: Login button not found, credentials filled only');
                 }
@@ -123,6 +123,47 @@ function fillField(field, value) {
     ];
 
     events.forEach(event => field.dispatchEvent(event));
+}
+
+// Wait for button to be ready (enabled and interactive) before clicking
+function waitForButtonReady(button, callback, attempt = 0) {
+    const maxAttempts = 20; // Try for up to 2 seconds (20 * 100ms)
+
+    if (attempt >= maxAttempts) {
+        console.log('NUST Qalam Auto-Login: Button ready check timeout, clicking anyway');
+        callback();
+        return;
+    }
+
+    // Check if button is ready
+    const isReady = isButtonReady(button);
+
+    if (isReady) {
+        console.log(`NUST Qalam Auto-Login: Button ready after ${attempt * 100}ms`);
+        callback();
+    } else {
+        console.log(`NUST Qalam Auto-Login: Button not ready, attempt ${attempt + 1}/${maxAttempts}`);
+        setTimeout(() => waitForButtonReady(button, callback, attempt + 1), 100);
+    }
+}
+
+// Check if button is in a ready state
+function isButtonReady(button) {
+    if (!button) return false;
+
+    // Check if button is disabled
+    if (button.disabled) return false;
+
+    // Check aria-disabled attribute
+    if (button.getAttribute('aria-disabled') === 'true') return false;
+
+    // Check if button has disabled class (common pattern)
+    if (button.classList.contains('disabled')) return false;
+
+    // Check if button is still visible and interactive
+    if (!isVisible(button)) return false;
+
+    return true;
 }
 
 // Helper function to find username field
