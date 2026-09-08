@@ -4,6 +4,8 @@
 console.log('NUST Auto-Login: Content script loaded');
 
 let loginModalRequested = false;
+let loginMenuRequested = false;
+let resizeTimer = null;
 const statusElementId = 'nust-auto-login-status';
 
 function showLoginStatus(message, type = 'error') {
@@ -41,7 +43,26 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initAutoLogin);
 }
 
+// The LMS switches to a hamburger navigation at smaller widths. Re-run the
+// discovery flow after a resize so the responsive login control is found.
+window.addEventListener('resize', () => {
+    if (!isLoginSurface()) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        if (!findUsernameField() && !findPasswordField()) {
+            loginModalRequested = false;
+            loginMenuRequested = false;
+            findElementsWithRetry(0);
+        }
+    }, 300);
+});
+
 function initAutoLogin() {
+    if (!isLoginSurface()) {
+        console.log('NUST Auto-Login: Current page is not a login surface; skipping');
+        return;
+    }
+
     console.log('NUST Auto-Login: Initializing auto-login');
 
     // Check login attempt count
@@ -100,6 +121,8 @@ function initAutoLogin() {
 }
 
 function findElementsWithRetry(attempt) {
+    if (!isLoginSurface()) return;
+
     if (attempt > 10) {
         console.log('NUST Auto-Login: Max retry attempts reached');
         reportLoginError('Could not find the LMS login fields. Try opening the login box again and reload the page.');
@@ -125,6 +148,17 @@ function findElementsWithRetry(attempt) {
     }
 }
 
+function isLoginSurface() {
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    const isArchive = window.location.hostname === 'archivelms.nust.edu.pk';
+
+    if (isArchive) {
+        return path === '/portal' || path === '/portal/login/index.php';
+    }
+
+    return path === '/' || path === '/portal' || path === '/portal/login/index.php';
+}
+
 // Open the homepage login modal used by the current LMS frontend.
 function openLoginModal() {
     // Avoid clicking the header button again while its modal is still rendering.
@@ -144,6 +178,27 @@ function openLoginModal() {
             loginModalRequested = true;
             candidate.click();
             return true;
+        }
+    }
+
+    // On narrow screens, the login control is inside the collapsed menu.
+    if (!loginMenuRequested) {
+        for (const candidate of candidates) {
+            const text = (candidate.textContent || candidate.getAttribute('aria-label') || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+
+            if (/\bmenu\b/.test(text) && isVisible(candidate)) {
+                console.log('NUST Auto-Login: Opening responsive navigation menu');
+                loginMenuRequested = true;
+                candidate.click();
+                setTimeout(() => {
+                    loginMenuRequested = false;
+                    openLoginModal();
+                }, 250);
+                return true;
+            }
         }
     }
 

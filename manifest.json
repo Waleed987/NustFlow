@@ -28,9 +28,11 @@
     "content_scripts": [
         {
             "matches": [
-                "https://lms.nust.edu.pk/*",
-                "https://www.lms.nust.edu.pk/*",
-                "https://archivelms.nust.edu.pk/*"
+                "https://lms.nust.edu.pk/",
+                "https://www.lms.nust.edu.pk/",
+                "https://lms.nust.edu.pk/portal/*",
+                "https://www.lms.nust.edu.pk/portal/*",
+                "https://archivelms.nust.edu.pk/portal/*"
             ],
             "js": [
                 "content.js"
