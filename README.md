@@ -4,7 +4,9 @@ A browser extension that automatically fills and submits your login Details for 
 
 ## ✨ Features
 
-- **Auto-Redirect**: Automatically redirects from index page to portal login (no need to click "Portal" button)
+- **Auto-Redirect**: Automatically redirects legacy LMS URLs to the current LMS homepage
+- **Modal Login Support**: Opens the homepage "Log in" modal automatically
+- **Archive LMS Support**: Also supports `https://archivelms.nust.edu.pk/portal/`
 - **Instant Auto-Login**: Automatically fills username and password when you visit the NUST LMS login page
 - **Auto-Submit**: Automatically clicks the login button for seamless access
 - **Secure Storage**: All credentials are stored locally in your browser using Chrome's secure storage API
@@ -23,7 +25,7 @@ A browser extension that automatically fills and submits your login Details for 
    - You'll see a success message
 
 2. **Test Auto-Login**
-   - Navigate to https://lms.nust.edu.pk/portal/
+   - Navigate to https://lms.nust.edu.pk/
    - Your credentials will be automatically filled
    - The login button will be automatically clicked
    - You'll be logged in instantly!
@@ -45,7 +47,7 @@ A browser extension that automatically fills and submits your login Details for 
 
 **Auto-login not working?**
 - Make sure you've saved your credentials in the extension popup
-- Check that you're on the correct URL: `https://lms.nust.edu.pk/portal/`
+- Check that you're on the correct URL: `https://lms.nust.edu.pk/`
 - Try refreshing the page
 - Verify your credentials are correct
 

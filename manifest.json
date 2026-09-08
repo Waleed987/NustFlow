@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "NustFlow",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "Auto-login for NUST LMS and Qalam.Provides instant Re-login after session expires as Well.",
     "permissions": [
         "storage"
@@ -9,6 +9,7 @@
     "host_permissions": [
         "https://lms.nust.edu.pk/*",
         "https://www.lms.nust.edu.pk/*",
+        "https://archivelms.nust.edu.pk/*",
         "https://qalam.nust.edu.pk/*"
     ],
     "action": {
@@ -27,10 +28,9 @@
     "content_scripts": [
         {
             "matches": [
-                "https://lms.nust.edu.pk/portal/*",
-                "https://www.lms.nust.edu.pk/portal/*",
-                "https://lms.nust.edu.pk/portal/login/index.php*",
-                "https://www.lms.nust.edu.pk/portal/login/index.php"
+                "https://lms.nust.edu.pk/*",
+                "https://www.lms.nust.edu.pk/*",
+                "https://archivelms.nust.edu.pk/*"
             ],
             "js": [
                 "content.js"

@@ -1,5 +1,5 @@
 // NUST Auto-Redirect Script
-// Automatically redirects from index page to portal login
+// Automatically redirects old LMS URLs to the current homepage login flow
 
 console.log('NUST Auto-Redirect: Script loaded on index page');
 
@@ -15,12 +15,12 @@ chrome.storage.local.get('extensionEnabled', (result) => {
     // Check if we're on the index page (with or without www)
     const currentUrl = window.location.href;
     if (currentUrl.includes('lms.nust.edu.pk/lms/index.php')) {
-        console.log('NUST Auto-Redirect: Detected index page, redirecting to portal...');
+        console.log('NUST Auto-Redirect: Detected old index page, redirecting to LMS homepage...');
 
-        // Redirect to portal (use the same subdomain as current page)
+        // Use the same subdomain as the current page.
         const targetUrl = currentUrl.includes('www.')
-            ? 'https://www.lms.nust.edu.pk/portal/'
-            : 'https://lms.nust.edu.pk/portal/';
+            ? 'https://www.lms.nust.edu.pk/'
+            : 'https://lms.nust.edu.pk/';
 
         window.location.href = targetUrl;
     }
