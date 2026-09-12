@@ -2,7 +2,7 @@
   "name": "nustflow",
   "private": true,
   "scripts": {
-    "test": "node --test --test-concurrency=1 tests/lms-login.test.cjs tests/qalam-login.test.cjs",
+    "test": "node --test --test-concurrency=1 tests/lms-login.test.cjs tests/qalam-login.test.cjs tests/onboarding.test.cjs",
     "test:live": "node tests/lms-login-live.cjs",
     "test:qalam:live": "node tests/qalam-login-live.cjs"
   },

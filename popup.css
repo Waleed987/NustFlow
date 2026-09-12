@@ -299,6 +299,12 @@ input:checked+.slider:before {
     font-weight: 500;
 }
 
+.footer a {
+    display: inline-block;
+    margin-bottom: 10px;
+    color: #4f46e5;
+}
+
 /* Scrollbar Styling */
 .container::-webkit-scrollbar {
     width: 6px;

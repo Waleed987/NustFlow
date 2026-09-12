@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to NustFlow</title>
+    <link rel="icon" href="icons/icon48.png">
+    <link rel="stylesheet" href="welcome.css">
+    <script src="encryption.js" defer></script>
+    <script src="welcome.js" defer></script>
+</head>
+<body>
+    <main class="card">
+        <header class="brand">
+            <img src="icons/icon48.png" width="40" height="40" alt="">
+            <span>NustFlow</span>
+            <span class="badge">One-time setup</span>
+        </header>
+
+        <section id="setup">
+            <h1>One setup.<br>Fewer logins.</h1>
+            <p class="intro">Save your details once. NustFlow signs you in to LMS and Qalam automatically.</p>
+
+            <form id="setupForm">
+                <fieldset id="setupFields" disabled>
+                    <legend class="sr-only">Login details</legend>
+                    <div class="field">
+                        <label for="username">LMS username</label>
+                        <input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="Your NUST username">
+                    </div>
+                    <div class="field">
+                        <label for="password">Password</label>
+                        <input id="password" type="password" autocomplete="current-password" required placeholder="Your LMS password">
+                    </div>
+                    <label class="checkbox-row" for="useSame">
+                        <input id="useSame" type="checkbox" checked aria-controls="qalamFields" aria-expanded="false">
+                        <span>Use the same details for Qalam</span>
+                    </label>
+                    <fieldset id="qalamFields" hidden disabled>
+                        <legend>Separate Qalam details</legend>
+                        <div class="field">
+                            <label for="qalamUsername">Qalam username</label>
+                            <input id="qalamUsername" type="text" autocomplete="section-qalam username" autocapitalize="none" spellcheck="false" required>
+                        </div>
+                        <div class="field">
+                            <label for="qalamPassword">Qalam password</label>
+                            <input id="qalamPassword" type="password" autocomplete="section-qalam current-password" required>
+                        </div>
+                    </fieldset>
+                    <button id="saveBtn" class="button primary" type="submit">Save &amp; Enable</button>
+                </fieldset>
+            </form>
+            <button id="skipBtn" class="text-button" type="button">Set up later</button>
+
+            <p class="privacy">Your details stay in this browser</p>
+        </section>
+
+        <section id="success" hidden aria-labelledby="successTitle">
+            <div class="success-mark" aria-hidden="true">&#10003;</div>
+            <h1 id="successTitle" tabindex="-1">You're ready!</h1>
+            <p class="intro">Details saved. Open a portal to try auto-login. You can update your details from the extension icon anytime.</p>
+            <div class="portal-links">
+                <a class="button primary" href="https://lms.nust.edu.pk/" target="_blank" rel="noopener noreferrer">Open LMS</a>
+                <a class="button secondary" href="https://qalam.nust.edu.pk/web/login" target="_blank" rel="noopener noreferrer">Open Qalam</a>
+            </div>
+            <p class="hint">Already had a portal open? Refresh that tab once.</p>
+        </section>
+
+        <section id="existing" hidden aria-labelledby="existingTitle">
+            <h1 id="existingTitle" tabindex="-1">Details already saved.</h1>
+            <p class="intro">Your current details and preferences haven't been changed. Manage them in NustFlow settings.</p>
+            <a class="button primary" href="popup.html">Open settings</a>
+        </section>
+
+        <p id="status" role="alert" hidden></p>
+    </main>
+</body>
+</html>
