@@ -1,507 +1,285 @@
-// NUST Auto-Login Content Script - Optimized Version
-// This script runs on the current LMS homepage and the archive LMS portal.
+// Use Moodle's native form as soon as it is complete, without waiting for the
+// theme's modal scripts, animations, images, or responsive navigation.
+(() => {
+    const statusElementId = 'nust-auto-login-status';
+    const attemptKey = 'nustflow_lms_submissions';
+    const attemptWindowMs = 5 * 60 * 1000;
+    let running = false;
+    let finished = false;
+    let generation = 0;
+    let observer = null;
+    let progressTimer = null;
+    let retryTimer = null;
+    let deadlineTimer = null;
+    let verificationTimer = null;
+    let savedCredentials = null;
 
-console.log('NUST Auto-Login: Content script loaded');
-
-let loginModalRequested = false;
-let loginMenuRequested = false;
-let resizeTimer = null;
-const statusElementId = 'nust-auto-login-status';
-
-function showLoginStatus(message, type = 'error') {
-    let status = document.getElementById(statusElementId);
-    if (!status) {
-        status = document.createElement('div');
-        status.id = statusElementId;
-        status.setAttribute('role', 'status');
-        status.style.cssText = [
-            'position:fixed', 'right:20px', 'bottom:20px', 'z-index:2147483647',
-            'max-width:360px', 'padding:12px 16px', 'border-radius:6px',
-            'font:14px/1.4 Arial,sans-serif', 'box-shadow:0 2px 10px rgba(0,0,0,.25)'
-        ].join(';');
-        document.documentElement.appendChild(status);
-    }
-
-    status.textContent = `NustFlow: ${message}`;
-    status.style.background = type === 'info' ? '#e8f1ff' : '#ffe8e8';
-    status.style.color = type === 'info' ? '#174a8b' : '#8a1c1c';
-    status.style.border = `1px solid ${type === 'info' ? '#8bb5f0' : '#e09a9a'}`;
-    clearTimeout(status._hideTimer);
-    status._hideTimer = setTimeout(() => status.remove(), 7000);
-}
-
-function reportLoginError(message, error) {
-    console.error(`NUST Auto-Login: ${message}`, error || '');
-    showLoginStatus(message);
-}
-
-// Run immediately when script loads
-initAutoLogin();
-
-// Also run on DOMContentLoaded as backup
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAutoLogin);
-}
-
-// The LMS switches to a hamburger navigation at smaller widths. Re-run the
-// discovery flow after a resize so the responsive login control is found.
-window.addEventListener('resize', () => {
-    if (!isLoginSurface()) return;
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-        if (!findUsernameField() && !findPasswordField()) {
-            loginModalRequested = false;
-            loginMenuRequested = false;
-            findElementsWithRetry(0);
+    function isLoginSurface() {
+        const { protocol, hostname, pathname } = window.location;
+        if (protocol !== 'https:') return false;
+        const path = pathname.replace(/\/+$/, '') || '/';
+        if (hostname === 'archivelms.nust.edu.pk') {
+            return ['/portal', '/portal/index.php', '/portal/login/index.php'].includes(path);
         }
-    }, 300);
-});
-
-function initAutoLogin() {
-    if (!isLoginSurface()) {
-        console.log('NUST Auto-Login: Current page is not a login surface; skipping');
-        return;
+        return ['lms.nust.edu.pk', 'www.lms.nust.edu.pk'].includes(hostname) &&
+            ['/', '/index.php', '/login/index.php', '/portal',
+                '/portal/index.php', '/portal/login/index.php'].includes(path);
     }
 
-    console.log('NUST Auto-Login: Initializing auto-login');
-
-    // Check login attempt count
-    const attemptKey = 'lms_login_attempts';
-    const lastUrlKey = 'lms_last_url';
-    const timestampKey = 'lms_last_attempt_time';
-    const currentUrl = window.location.href;
-    const lastUrl = sessionStorage.getItem(lastUrlKey);
-    const lastAttemptTime = parseInt(sessionStorage.getItem(timestampKey) || '0');
-    const currentTime = Date.now();
-
-    // Reset counter if more than 5 minutes have passed since last attempt
-    // This handles session expiry scenarios
-    if (lastAttemptTime && (currentTime - lastAttemptTime) > 5 * 60 * 1000) {
-        console.log('NUST Auto-Login: More than 5 minutes since last attempt, resetting counter');
-        sessionStorage.setItem(attemptKey, '0');
+    function isAuthenticated() {
+        return document.body?.classList.contains('loggedin') ||
+            !!document.querySelector('a[href*="/login/logout.php"]');
     }
 
-    // Reset counter if we're on a fresh login page (different URL or page reload after successful login)
-    // This handles session expiry scenarios where user is redirected back to login
-    const usernameField = findUsernameField();
-    const passwordField = findPasswordField();
-
-    // The updated LMS keeps the login form inside a modal on the homepage.
-    // Open that modal before looking for the fields when necessary.
-    if (!usernameField || !passwordField) {
-        openLoginModal();
+    function isActivePage() {
+        return !document.prerendering && document.visibilityState !== 'hidden';
     }
 
-    if (usernameField && passwordField && !usernameField.value && !passwordField.value) {
-        // Empty fields indicate a fresh login page or session expiry
-        // Reset the counter to allow auto-login
-        if (lastUrl && lastUrl !== currentUrl) {
-            console.log('NUST Auto-Login: Detected new login page, resetting attempt counter');
-            sessionStorage.setItem(attemptKey, '0');
+    function showStatus(message) {
+        if (!document.documentElement) return;
+        let status = document.getElementById(statusElementId);
+        if (!status) {
+            status = document.createElement('div');
+            status.id = statusElementId;
+            status.setAttribute('role', 'status');
+            status.style.cssText = [
+                'position:fixed', 'right:20px', 'bottom:20px', 'z-index:2147483647',
+                'max-width:360px', 'padding:12px 16px', 'border-radius:6px',
+                'font:14px/1.4 Arial,sans-serif', 'box-shadow:0 2px 10px rgba(0,0,0,.25)',
+                'background:#ffe8e8', 'color:#8a1c1c'
+            ].join(';');
+            document.documentElement.appendChild(status);
         }
+        status.textContent = 'NustFlow: ' + message;
+        clearTimeout(status._hideTimer);
+        status._hideTimer = setTimeout(() => status.remove(), 10000);
     }
 
-    // Store current URL and timestamp for next check
-    sessionStorage.setItem(lastUrlKey, currentUrl);
-    sessionStorage.setItem(timestampKey, currentTime.toString());
-
-    const attempts = parseInt(sessionStorage.getItem(attemptKey) || '0');
-
-    if (attempts >= 2) {
-        console.log('NUST Auto-Login: Max login attempts reached (2), stopping auto-login');
-        showLoginStatus('Automatic login has already been attempted twice. Check your saved credentials and reload the page.');
-        return;
+    function pause() {
+        running = false;
+        generation++;
+        observer?.disconnect();
+        observer = null;
+        clearTimeout(progressTimer);
+        clearInterval(retryTimer);
+        clearTimeout(deadlineTimer);
+        clearTimeout(verificationTimer);
+        progressTimer = retryTimer = deadlineTimer = verificationTimer = null;
+        savedCredentials = null;
     }
 
-    // Increment attempt counter
-    sessionStorage.setItem(attemptKey, (attempts + 1).toString());
-
-    // Try to find elements with retry logic
-    findElementsWithRetry(0);
-}
-
-function findElementsWithRetry(attempt) {
-    if (!isLoginSurface()) return;
-
-    if (attempt > 10) {
-        console.log('NUST Auto-Login: Max retry attempts reached');
-        reportLoginError('Could not find the LMS login fields. Try opening the login box again and reload the page.');
-        return;
+    function stop(message) {
+        pause();
+        finished = true;
+        if (message) showStatus(message);
     }
 
-    const usernameField = findUsernameField();
-    const passwordField = findPasswordField();
-    const loginButton = findLoginButton();
-
-    console.log(`NUST Auto-Login: Attempt ${attempt + 1} - Found:`, {
-        username: !!usernameField,
-        password: !!passwordField,
-        button: !!loginButton
-    });
-
-    if (usernameField && passwordField) {
-        fillAndSubmit(usernameField, passwordField, loginButton);
-    } else {
-        openLoginModal();
-        // The modal fields are rendered asynchronously after the button click.
-        setTimeout(() => findElementsWithRetry(attempt + 1), 300);
-    }
-}
-
-function isLoginSurface() {
-    const path = window.location.pathname.replace(/\/+$/, '') || '/';
-    const isArchive = window.location.hostname === 'archivelms.nust.edu.pk';
-
-    if (isArchive) {
-        return path === '/portal' || path === '/portal/login/index.php';
+    function clearAttempts() {
+        try { sessionStorage.removeItem(attemptKey); } catch { /* Storage may be unavailable. */ }
     }
 
-    return path === '/' || path === '/portal' || path === '/portal/login/index.php';
-}
-
-// Open the homepage login modal used by the current LMS frontend.
-function openLoginModal() {
-    // Avoid clicking the header button again while its modal is still rendering.
-    if (loginModalRequested) return false;
-    if (findUsernameField() || findPasswordField()) return false;
-
-    const candidates = document.querySelectorAll('button, a, [role="button"]');
-    for (const candidate of candidates) {
-        const text = (candidate.textContent || candidate.getAttribute('aria-label') || '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
-
-        // Do not match the accessibility "Skip to login form" link.
-        if (/\blog\s*in\b/.test(text) && !text.includes('skip') && isVisible(candidate)) {
-            console.log('NUST Auto-Login: Opening homepage login modal');
-            loginModalRequested = true;
-            candidate.click();
+    function recordSubmission(checkOnly = false) {
+        try {
+            const now = Date.now();
+            let previous;
+            try { previous = JSON.parse(sessionStorage.getItem(attemptKey)); } catch { /* Corrupt record. */ }
+            const count = previous && Number.isInteger(previous.count) && previous.count > 0 &&
+                Number.isFinite(previous.time) && now >= previous.time &&
+                now - previous.time < attemptWindowMs ? previous.count : 0;
+            if (count >= 2) {
+                stop('Auto-login paused after two submissions. Check your saved credentials. Save them again to retry, or log in manually.');
+                return false;
+            }
+            // Discovery, resizing, and page activation never consume an attempt.
+            if (!checkOnly) sessionStorage.setItem(attemptKey, JSON.stringify({ count: count + 1, time: now }));
             return true;
+        } catch {
+            stop('Browser session storage is unavailable. Allow storage for LMS or log in manually.');
+            return false;
         }
     }
 
-    // On narrow screens, the login control is inside the collapsed menu.
-    if (!loginMenuRequested) {
-        for (const candidate of candidates) {
-            const text = (candidate.textContent || candidate.getAttribute('aria-label') || '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .toLowerCase();
+    function isVisible(element) {
+        if (!element?.isConnected || !element.getClientRects().length) return false;
+        const style = getComputedStyle(element);
+        return style.visibility !== 'hidden' && style.display !== 'none';
+    }
 
-            if (/\bmenu\b/.test(text) && isVisible(candidate)) {
-                console.log('NUST Auto-Login: Opening responsive navigation menu');
-                loginMenuRequested = true;
-                candidate.click();
-                setTimeout(() => {
-                    loginMenuRequested = false;
-                    openLoginModal();
-                }, 250);
-                return true;
+    function hasLoginError() {
+        return Array.from(document.querySelectorAll(
+            '#loginerrormessage, .loginerrors, [data-region="login-error"]'
+        )).some(element => element.textContent.trim() && isVisible(element));
+    }
+
+    function findLoginForm() {
+        const candidates = [];
+        for (const form of document.forms) {
+            // Only the same-origin Moodle login endpoint may receive credentials.
+            let action;
+            try { action = new URL(form.action, window.location.href); } catch { continue; }
+            if (form.method.toLowerCase() !== 'post' || action.origin !== location.origin ||
+                !['/login/index.php', '/portal/login/index.php'].includes(action.pathname)) continue;
+            const username = form.querySelector('input[name="username"]');
+            const password = form.querySelector('input[name="password"]');
+            const token = form.querySelector('input[name="logintoken"]');
+            if (!username || !password || !token?.value ||
+                username.matches(':disabled') || password.matches(':disabled') ||
+                token.matches(':disabled') || username.readOnly || password.readOnly) continue;
+            candidates.push({ form, username, password });
+        }
+        // Desktop/mobile forms coexist. Keep both fields and the token in one
+        // form, preferring a form the user has already opened.
+        return candidates.find(({ username }) => isVisible(username)) ||
+            candidates.find(({ form }) => form.id === 'header-form-login') || candidates[0];
+    }
+
+    function setField(field, value) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    async function loadCredentials() {
+        const result = await chrome.storage.local.get([
+            'extensionEnabled', 'nustCredentials', 'qalamCredentials', '_encryptionKey'
+        ]);
+        if (result.extensionEnabled === false) return null;
+        const credentials = result.nustCredentials || result.qalamCredentials;
+        if (!credentials) throw new Error('No saved credentials. Open NustFlow and save your LMS credentials first.');
+        if (typeof credentials.username !== 'string' || !credentials.username.trim()) {
+            throw new Error('Saved username is empty. Open NustFlow and save your credentials again.');
+        }
+        if (typeof credentials.password !== 'string' || !credentials.password) {
+            throw new Error('Saved password is missing. Open NustFlow and save your credentials again.');
+        }
+        let password = credentials.password;
+        if (result._encryptionKey) {
+            try {
+                const key = await crypto.subtle.importKey(
+                    'jwk', result._encryptionKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+                );
+                const combined = Uint8Array.from(atob(password), c => c.charCodeAt(0));
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: combined.slice(0, 12) }, key, combined.slice(12)
+                );
+                password = new TextDecoder().decode(decrypted);
+            } catch {
+                throw new Error('Could not decrypt the saved password. Open NustFlow and save your credentials again.');
             }
         }
+        if (!password) throw new Error('Saved password is empty. Open NustFlow and save your credentials again.');
+        return { username: credentials.username.trim(), password };
     }
 
-    return false;
-}
-
-function fillAndSubmit(usernameField, passwordField, loginButton) {
-    // Get credentials and enabled state from storage
-    chrome.storage.local.get([
-        'nustCredentials',
-        'qalamCredentials',
-        'qalamUseSame',
-        'extensionEnabled'
-    ], async (result) => {
-        // Check if extension is enabled (default to true if not set)
-        const isEnabled = result.extensionEnabled !== false;
-
-        if (!isEnabled) {
-            console.log('NUST Auto-Login: Extension is disabled, skipping auto-login');
-            showLoginStatus('Auto-login is disabled in the extension settings.', 'info');
+    function progress() {
+        progressTimer = null;
+        if (!running || !savedCredentials) return;
+        if (!isActivePage()) { pause(); return; }
+        if (isAuthenticated()) { clearAttempts(); stop(); return; }
+        if (!isLoginSurface()) { stop(); return; }
+        if (hasLoginError()) {
+            stop('LMS reported a login error. Check your saved credentials or log in manually.');
             return;
         }
-
-        // The current LMS explicitly uses the same credentials as Qalam.
-        // Fall back to Qalam storage when separate LMS credentials were not saved.
-        const credentials = result.nustCredentials || result.qalamCredentials;
-
-        if (credentials) {
-            const { username, password: encryptedPassword } = credentials;
-            console.log('NUST Auto-Login: Credentials found in storage');
-
-            if (typeof username !== 'string' || !username.trim()) {
-                reportLoginError('Saved username is empty. Open the extension popup and save your credentials.');
-                return;
-            }
-
-            if (typeof encryptedPassword !== 'string' || !encryptedPassword) {
-                reportLoginError('Saved password is missing. Open the extension popup and save your credentials.');
-                return;
-            }
-
-            // Decrypt password
-            const password = await decryptPassword(encryptedPassword);
-
-            if (!password) {
-                reportLoginError('Could not decrypt the saved password. Save your credentials again in the extension popup.');
-                return;
-            }
-
-            // Check if fields are empty (not already filled)
-            if (!usernameField.value && !passwordField.value) {
-                console.log('NUST Auto-Login: Filling credentials');
-
-                // Fill both fields immediately
-                fillField(usernameField, username.trim());
-                fillField(passwordField, password);
-
-                if (!usernameField.value || !passwordField.value) {
-                    reportLoginError('The LMS fields could not be filled. Try refreshing the page.');
-                    return;
-                }
-
-                console.log('NUST Auto-Login: Credentials filled');
-
-                // Click login button with delay for validation
-                if (loginButton) {
-                    setTimeout(() => {
-                        try {
-                            if (!loginButton.isConnected || !isVisible(loginButton)) {
-                                reportLoginError('The LMS login button disappeared before submission.');
-                                return;
-                            }
-                            console.log('NUST Auto-Login: Clicking login button');
-                            loginButton.click();
-                            verifyLoginResult(usernameField, passwordField);
-                        } catch (error) {
-                            reportLoginError('Could not click the LMS login button.', error);
-                        }
-                    }, 500);
-                } else {
-                    // Fallback: Try to submit the form directly
-                    console.log('NUST Auto-Login: Login button not found, attempting form submission');
-                    const form = usernameField.closest('form') || passwordField.closest('form');
-                    if (form) {
-                        setTimeout(() => {
-                            try {
-                                console.log('NUST Auto-Login: Submitting form directly');
-                                form.requestSubmit ? form.requestSubmit() : form.submit();
-                                verifyLoginResult(usernameField, passwordField);
-                            } catch (error) {
-                                reportLoginError('Could not submit the LMS login form.', error);
-                            }
-                        }, 500);
-                    } else {
-                        reportLoginError('Credentials were filled, but the LMS login form could not be found.');
-                    }
-                }
-            } else {
-                console.log('NUST Auto-Login: Fields already filled, skipping');
-            }
-        } else {
-            reportLoginError('No saved LMS or Qalam credentials found. Open the extension popup and save them first.');
+        const fields = findLoginForm();
+        if (!fields) return;
+        if (!recordSubmission(true)) return;
+        const { form, username, password } = fields;
+        // Leave partially typed or different credentials under the user's control.
+        if ((username.value || password.value) &&
+            (username.value !== savedCredentials.username || password.value !== savedCredentials.password)) {
+            stop();
+            return;
         }
-    });
-}
-
-function verifyLoginResult(usernameField, passwordField) {
-    setTimeout(() => {
-        if (document.contains(usernameField) && document.contains(passwordField) &&
-            isVisible(usernameField) && isVisible(passwordField)) {
-            showLoginStatus('Login did not complete. Check your username and password.');
+        setField(username, savedCredentials.username);
+        setField(password, savedCredentials.password);
+        if (!username.value || !password.value || !form.checkValidity()) {
+            stop('The LMS login form could not be completed. Open the login box and check its fields.');
+            return;
         }
-    }, 2500);
-}
-
-function fillField(field, value) {
-    // Focus the field
-    field.focus();
-
-    // Set value using native setter
-    setNativeValue(field, value);
-
-    // Trigger comprehensive events for form validation
-    const events = [
-        new Event('input', { bubbles: true, cancelable: true }),
-        new Event('change', { bubbles: true, cancelable: true }),
-        new KeyboardEvent('keydown', { bubbles: true, cancelable: true }),
-        new KeyboardEvent('keyup', { bubbles: true, cancelable: true }),
-        new Event('blur', { bubbles: true, cancelable: true }),
-        new FocusEvent('focusout', { bubbles: true, cancelable: true })
-    ];
-
-    events.forEach(event => field.dispatchEvent(event));
-}
-
-// Helper function to find username field
-function findUsernameField() {
-    const selectors = [
-        '#login-username',
-        'input[name="username"]',
-        'input[placeholder="Username" i]',
-        'input[type="text"]:not([type="hidden"])',
-        'input[name*="user" i]',
-        'input[id*="user" i]',
-        'input[autocomplete="username" i]',
-        'input[aria-label*="user" i]',
-        '[role="textbox"][aria-label*="user" i]',
-        '[role="textbox"][placeholder*="user" i]'
-    ];
-
-    const field = findFirstVisible(selectors);
-    if (field) return field;
-
-    // Last-resort fallback for custom controls: the first visible textbox that
-    // is not clearly a password field.
-    const textboxes = document.querySelectorAll('input, [role="textbox"]');
-    return Array.from(textboxes).find(element => {
-        const type = (element.getAttribute('type') || '').toLowerCase();
-        const label = `${element.getAttribute('aria-label') || ''} ${element.getAttribute('placeholder') || ''}`.toLowerCase();
-        return type !== 'password' && !label.includes('search') && isVisible(element);
-    }) || null;
-}
-
-// Helper function to find password field
-function findPasswordField() {
-    const selectors = [
-        '#login-password',
-        'input[name="password"]',
-        'input[placeholder="Password" i]',
-        'input[type="password"]',
-        'input[name*="pass" i]',
-        'input[id*="pass" i]',
-        'input[autocomplete="current-password" i]',
-        'input[aria-label*="pass" i]',
-        '[role="textbox"][aria-label*="pass" i]',
-        '[role="textbox"][placeholder*="pass" i]'
-    ];
-
-    return findFirstVisible(selectors);
-}
-
-// Helper function to find the login button
-function findLoginButton() {
-    const selectors = [
-        '#header-form-login input[type="submit"]',
-        '#header-form-login button[type="submit"]',
-        'button[type="submit"]',
-        'input[type="submit"]',
-        'button[id*="login" i]',
-        'button[name*="login" i]',
-        'input[id*="login" i]',
-        'input[name*="login" i]',
-        'button.btn-primary',
-        'button.btn',
-        'a.btn',
-        '#loginbtn',
-        'button[data-action="submit"]'
-    ];
-
-    let button = findFirstVisible(selectors);
-
-    if (!button) {
-        // Fallback 1: find any button with "log" in its text
-        const buttons = document.querySelectorAll('button, input[type="submit"], a.btn, input[type="button"]');
-        for (const btn of buttons) {
-            const text = btn.textContent || btn.value || '';
-            if (text.toLowerCase().includes('log') && isVisible(btn)) {
-                console.log('NUST Auto-Login: Found login button by text content:', text);
-                button = btn;
-                break;
-            }
-        }
-    }
-
-    // Fallback 2: Try to find the form and get its submit button
-    if (!button) {
-        const form = document.querySelector('form');
-        if (form) {
-            const formButton = form.querySelector('button[type="submit"], input[type="submit"]');
-            if (formButton && isVisible(formButton)) {
-                console.log('NUST Auto-Login: Found login button within form');
-                button = formButton;
-            }
-        }
-    }
-
-    return button;
-}
-
-// Find first visible element from selectors
-function findFirstVisible(selectors) {
-    for (const selector of selectors) {
+        if (!recordSubmission()) return;
+        // Stop observers before submission so input/theme mutations cannot log
+        // in twice. Native submission retains Moodle's own anti-CSRF token.
+        stop();
         try {
-            const element = document.querySelector(selector);
-            if (element && isVisible(element)) {
-                console.log('NUST Auto-Login: Found element with selector:', selector);
-                return element;
-            }
-        } catch (e) {
-            // Invalid selector, skip
-            continue;
+            HTMLFormElement.prototype.requestSubmit.call(form);
+            verificationTimer = setTimeout(() => {
+                if (isAuthenticated()) { clearAttempts(); return; }
+                if (form.isConnected && isActivePage()) {
+                    showStatus('LMS has not completed login yet. If it stays here, open the login box to check for an error.');
+                }
+            }, 10000);
+        } catch {
+            showStatus('Could not submit the LMS login form. Try logging in manually.');
         }
     }
-    return null;
-}
 
-// Set value using native setter (works better with React/Angular forms)
-function setNativeValue(element, value) {
-    const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set ||
-        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set;
-
-    if (valueSetter) {
-        valueSetter.call(element, value);
-    } else {
-        element.value = value;
+    function scheduleProgress() {
+        if (running && progressTimer === null) progressTimer = setTimeout(progress, 0);
     }
-}
 
-// Check if element is visible
-function isVisible(element) {
-    if (!element) return false;
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        style.opacity !== '0';
-}
-
-// Decrypt password using Web Crypto API
-async function decryptPassword(encryptedPassword) {
-    if (!encryptedPassword) return null;
-
-    try {
-        // Get encryption key
-        const result = await chrome.storage.local.get('_encryptionKey');
-        if (!result._encryptionKey) return encryptedPassword; // Fallback for unencrypted
-
-        const key = await crypto.subtle.importKey(
-            'jwk',
-            result._encryptionKey,
-            { name: 'AES-GCM', length: 256 },
-            true,
-            ['decrypt']
-        );
-
-        // Convert from base64
-        const combined = Uint8Array.from(atob(encryptedPassword), c => c.charCodeAt(0));
-
-        // Extract IV and encrypted data
-        const iv = combined.slice(0, 12);
-        const encryptedData = combined.slice(12);
-
-        const decryptedData = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            key,
-            encryptedData
-        );
-
-        return new TextDecoder().decode(decryptedData);
-    } catch (error) {
-        console.error('Decryption failed:', error);
-        return null;
+    async function start() {
+        if (finished || running || !isActivePage()) return;
+        if (isAuthenticated()) { clearAttempts(); stop(); return; }
+        if (!isLoginSurface()) return;
+        running = true;
+        const currentGeneration = ++generation;
+        observer = new MutationObserver(scheduleProgress);
+        observer.observe(document, {
+            childList: true, subtree: true, attributes: true,
+            attributeFilter: ['value', 'disabled', 'readonly', 'class', 'hidden']
+        });
+        // The observer handles parsed/inserted forms immediately; the fallback
+        // also catches input.value updates that produce no DOM mutation.
+        retryTimer = setInterval(scheduleProgress, 250);
+        deadlineTimer = setTimeout(() => stop(
+            'The LMS login form is not ready. Try opening Log in manually or reload the page.'
+        ), 30000);
+        try {
+            const credentials = await loadCredentials();
+            if (currentGeneration !== generation) return;
+            if (!credentials) { stop(); return; }
+            savedCredentials = credentials;
+            scheduleProgress();
+        } catch (error) {
+            if (currentGeneration === generation) stop(
+                error.message?.startsWith('Saved ') || error.message?.startsWith('No saved ') ||
+                error.message?.startsWith('Could not decrypt ') ? error.message :
+                    'Could not read saved credentials. Reload NustFlow in Chrome and refresh LMS.'
+            );
+        }
     }
-}
+
+    // Speculative loads and back/forward restores need activation hooks;
+    // DOMContentLoaded alone misses documents Chrome has already loaded.
+    if (window.top !== window) return;
+    if (isAuthenticated()) clearAttempts();
+    // At document_start the dashboard's account menu/body may not exist yet.
+    // Clear the submission budget after it is parsed, without starting login there.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            if (isAuthenticated()) clearAttempts();
+        }, { once: true });
+    }
+    if (!isLoginSurface()) return;
+    document.addEventListener('DOMContentLoaded', scheduleProgress, { once: true });
+    document.addEventListener('prerenderingchange', start);
+    document.addEventListener('visibilitychange', () => {
+        if (isActivePage()) start();
+        else pause();
+    });
+    window.addEventListener('pagehide', pause);
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) finished = false;
+        start();
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !['nustCredentials', 'qalamCredentials', 'extensionEnabled']
+            .some(key => key in changes)) return;
+        pause();
+        clearAttempts();
+        finished = false;
+        start();
+    });
+    start();
+})();

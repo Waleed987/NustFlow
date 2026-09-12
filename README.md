@@ -5,7 +5,7 @@ A browser extension that automatically fills and submits your login Details for 
 ## ✨ Features
 
 - **Auto-Redirect**: Automatically redirects legacy LMS URLs to the current LMS homepage
-- **Modal Login Support**: Opens the homepage "Log in" modal automatically
+- **Early LMS Login**: Uses the native login form as soon as its fields and security token are ready, without waiting for the popup or page images
 - **Archive LMS Support**: Also supports `https://archivelms.nust.edu.pk/portal/`
 - **Instant Auto-Login**: Automatically fills username and password when you visit the NUST LMS login page
 - **Auto-Submit**: Automatically clicks the login button for seamless access
@@ -50,6 +50,19 @@ A browser extension that automatically fills and submits your login Details for 
 - Check that you're on the correct URL: `https://lms.nust.edu.pk/`
 - Try refreshing the page
 - Verify your credentials are correct
+
+**After updating the unpacked extension:**
+
+1. Open `chrome://extensions` and click the reload button on the NustFlow card.
+2. Confirm the version is **1.0.5**.
+3. Open a fresh tab, search Google for NUST LMS, and click the LMS result. Login no longer needs to open the popup first.
+
+## Development tests
+
+With Node.js and Chrome installed, run `npm install` once, then `npm test`.
+The tests load the actual unpacked extension in a temporary Chrome profile, save encrypted dummy credentials through the popup, and intercept all website requests locally. They cover direct and search-link navigation, delayed resources/tokens, responsive layouts, page restoration, and login errors.
+
+`npm run test:live` additionally opens the public LMS and real Google search results. It checks the generated login request but intercepts it before transmission; it does not authenticate an account. Google may require a CAPTCHA, in which case this smoke test stops.
 
 ---
 
