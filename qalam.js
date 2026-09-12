@@ -1,299 +1,292 @@
-// NUST Qalam Auto-Login Content Script
-// This script runs on qalam.nust.edu.pk/web/login
+// Qalam uses a native POST form. Submit as soon as its fields and CSRF token
+// are parsed, without waiting for page assets or the old one-second click delay.
+(() => {
+    const statusElementId = 'nust-qalam-login-status';
+    const attemptKey = 'nustflow_qalam_submissions';
+    const attemptWindowMs = 5 * 60 * 1000;
+    let running = false;
+    let finished = false;
+    let generation = 0;
+    let observer = null;
+    let progressTimer = null;
+    let retryTimer = null;
+    let deadlineTimer = null;
+    let verificationTimer = null;
+    let savedCredentials = null;
 
-console.log('NUST Qalam Auto-Login: Content script loaded');
-
-// Run immediately when script loads
-initQalamAutoLogin();
-
-// Also run on DOMContentLoaded as backup
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initQalamAutoLogin);
-}
-
-function initQalamAutoLogin() {
-    console.log('NUST Qalam Auto-Login: Initializing auto-login');
-
-    // Check login attempt count
-    const attemptKey = 'qalam_login_attempts';
-    const lastUrlKey = 'qalam_last_url';
-    const timestampKey = 'qalam_last_attempt_time';
-    const currentUrl = window.location.href;
-    const lastUrl = sessionStorage.getItem(lastUrlKey);
-    const lastAttemptTime = parseInt(sessionStorage.getItem(timestampKey) || '0');
-    const currentTime = Date.now();
-
-    // Reset counter if more than 5 minutes have passed since last attempt
-    // This handles session expiry scenarios
-    if (lastAttemptTime && (currentTime - lastAttemptTime) > 5 * 60 * 1000) {
-        console.log('NUST Qalam Auto-Login: More than 5 minutes since last attempt, resetting counter');
-        sessionStorage.setItem(attemptKey, '0');
+    function isLoginSurface() {
+        return location.protocol === 'https:' && location.hostname === 'qalam.nust.edu.pk' &&
+            location.pathname.replace(/\/+$/, '') === '/web/login';
     }
 
-    // Reset counter if we're on a fresh login page (different URL or page reload after successful login)
-    // This handles session expiry scenarios where user is redirected back to login
-    const usernameField = findUsernameField();
-    const passwordField = findPasswordField();
+    function isAuthenticated() {
+        return !!document.querySelector('a[href*="/web/session/logout"]') ||
+            (location.pathname.replace(/\/+$/, '') === '/student/dashboard' &&
+                !!document.querySelector('.user_heading_content'));
+    }
 
-    if (usernameField && passwordField && !usernameField.value && !passwordField.value) {
-        // Empty fields indicate a fresh login page or session expiry
-        // Reset the counter to allow auto-login
-        if (lastUrl && lastUrl !== currentUrl) {
-            console.log('NUST Qalam Auto-Login: Detected new login page, resetting attempt counter');
-            sessionStorage.setItem(attemptKey, '0');
+    function isActivePage() {
+        return !document.prerendering && document.visibilityState !== 'hidden';
+    }
+
+    function showStatus(message) {
+        if (!document.documentElement) return;
+        let status = document.getElementById(statusElementId);
+        if (!status) {
+            status = document.createElement('div');
+            status.id = statusElementId;
+            status.setAttribute('role', 'status');
+            status.style.cssText = [
+                'position:fixed', 'right:20px', 'bottom:20px', 'z-index:2147483647',
+                'max-width:360px', 'padding:12px 16px', 'border-radius:6px',
+                'font:14px/1.4 Arial,sans-serif', 'box-shadow:0 2px 10px rgba(0,0,0,.25)',
+                'background:#ffe8e8', 'color:#8a1c1c'
+            ].join(';');
+            document.documentElement.appendChild(status);
+        }
+        status.textContent = 'NustFlow: ' + message;
+        clearTimeout(status._hideTimer);
+        status._hideTimer = setTimeout(() => status.remove(), 10000);
+    }
+
+    function pause() {
+        running = false;
+        generation++;
+        observer?.disconnect();
+        observer = null;
+        clearTimeout(progressTimer);
+        clearInterval(retryTimer);
+        clearTimeout(deadlineTimer);
+        clearTimeout(verificationTimer);
+        progressTimer = retryTimer = deadlineTimer = verificationTimer = null;
+        savedCredentials = null;
+    }
+
+    function stop(message) {
+        pause();
+        finished = true;
+        if (message) showStatus(message);
+    }
+
+    function clearAttempts() {
+        try { sessionStorage.removeItem(attemptKey); } catch { /* Storage may be unavailable. */ }
+    }
+
+    function recordSubmission(checkOnly = false) {
+        try {
+            const now = Date.now();
+            let previous;
+            try { previous = JSON.parse(sessionStorage.getItem(attemptKey)); } catch { /* Corrupt record. */ }
+            const count = previous && Number.isInteger(previous.count) && previous.count > 0 &&
+                Number.isFinite(previous.time) && now >= previous.time &&
+                now - previous.time < attemptWindowMs ? previous.count : 0;
+            if (count >= 2) {
+                stop('Auto-login paused after two submissions. Check your saved credentials. Save them again to retry, or log in manually.');
+                return false;
+            }
+            // Discovery, resizing, and page activation never consume an attempt.
+            if (!checkOnly) sessionStorage.setItem(attemptKey, JSON.stringify({ count: count + 1, time: now }));
+            return true;
+        } catch {
+            stop('Browser session storage is unavailable. Allow storage for Qalam or log in manually.');
+            return false;
         }
     }
 
-    // Store current URL and timestamp for next check
-    sessionStorage.setItem(lastUrlKey, currentUrl);
-    sessionStorage.setItem(timestampKey, currentTime.toString());
-
-    const attempts = parseInt(sessionStorage.getItem(attemptKey) || '0');
-
-    if (attempts >= 2) {
-        console.log('NUST Qalam Auto-Login: Max login attempts reached (2), stopping auto-login');
-        return;
+    function isVisible(element) {
+        if (!element?.isConnected || !element.getClientRects().length) return false;
+        const style = getComputedStyle(element);
+        return style.visibility !== 'hidden' && style.display !== 'none';
     }
 
-    // Increment attempt counter
-    sessionStorage.setItem(attemptKey, (attempts + 1).toString());
-
-    // Try to find elements with retry logic
-    findElementsWithRetry(0);
-}
-
-function findElementsWithRetry(attempt) {
-    if (attempt > 3) {
-        console.log('NUST Qalam Auto-Login: Max retry attempts reached');
-        return;
+    function hasLoginError() {
+        return Array.from(document.querySelectorAll(
+            'form .alert-danger, form [role="alert"], form .oe_login_error, form .mb-2'
+        )).some(element => element.textContent.trim() &&
+            !element.closest('[hidden], .hidden') && isVisible(element));
     }
 
-    const usernameField = findUsernameField();
-    const passwordField = findPasswordField();
-    const loginButton = findLoginButton();
-
-    console.log(`NUST Qalam Auto-Login: Attempt ${attempt + 1} - Found:`, {
-        username: !!usernameField,
-        password: !!passwordField,
-        button: !!loginButton
-    });
-
-    if (usernameField && passwordField) {
-        fillAndSubmit(usernameField, passwordField, loginButton);
-    } else {
-        // Retry after a short delay
-        setTimeout(() => findElementsWithRetry(attempt + 1), 200);
+    function isFormParsed(form) {
+        if (document.readyState !== 'loading') return true;
+        // During streaming, a following sibling proves the parser has left the
+        // form. Include fields after the password, such as Odoo's redirect field.
+        for (let node = form; node && node !== document.documentElement; node = node.parentElement) {
+            if (node.nextSibling) return true;
+        }
+        return false;
     }
-}
 
-function fillAndSubmit(usernameField, passwordField, loginButton) {
-    // Get credentials and enabled state from storage
-    chrome.storage.local.get(['qalamCredentials', 'extensionEnabled'], async (result) => {
-        // Check if extension is enabled (default to true if not set)
-        const isEnabled = result.extensionEnabled !== false;
+    function findLoginForm() {
+        for (const form of document.forms) {
+            let action;
+            try { action = new URL(form.action, location.href); } catch { continue; }
+            if (form.method.toLowerCase() !== 'post' || action.origin !== location.origin ||
+                action.pathname.replace(/\/+$/, '') !== '/web/login' || !isFormParsed(form)) continue;
+            const username = form.querySelector('input[name="login"]');
+            const password = form.querySelector('input[name="password"]');
+            const token = form.querySelector('input[name="csrf_token"]');
+            if (!username || !password || !token?.value ||
+                username.form !== form || password.form !== form || token.form !== form ||
+                username.matches(':disabled') || password.matches(':disabled') ||
+                token.matches(':disabled') || username.readOnly || password.readOnly) continue;
+            return { form, username, password, action };
+        }
+    }
 
-        if (!isEnabled) {
-            console.log('NUST Qalam Auto-Login: Extension is disabled, skipping auto-login');
+    function setField(field, value) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    async function loadCredentials() {
+        const result = await chrome.storage.local.get([
+            'extensionEnabled', 'nustCredentials', 'qalamCredentials', 'qalamUseSame', '_encryptionKey'
+        ]);
+        if (result.extensionEnabled === false) return null;
+        const credentials = result.qalamUseSame === false ? result.qalamCredentials :
+            (result.nustCredentials || result.qalamCredentials);
+        if (!credentials) throw new Error('No saved credentials. Open NustFlow and save your Qalam credentials first.');
+        if (typeof credentials.username !== 'string' || !credentials.username.trim()) {
+            throw new Error('Saved username is empty. Open NustFlow and save your credentials again.');
+        }
+        if (typeof credentials.password !== 'string' || !credentials.password) {
+            throw new Error('Saved password is missing. Open NustFlow and save your credentials again.');
+        }
+        let password = credentials.password;
+        if (result._encryptionKey) {
+            try {
+                const key = await crypto.subtle.importKey(
+                    'jwk', result._encryptionKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+                );
+                const combined = Uint8Array.from(atob(password), c => c.charCodeAt(0));
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: combined.slice(0, 12) }, key, combined.slice(12)
+                );
+                password = new TextDecoder().decode(decrypted);
+            } catch {
+                throw new Error('Could not decrypt the saved password. Open NustFlow and save your credentials again.');
+            }
+        }
+        if (!password) throw new Error('Saved password is empty. Open NustFlow and save your credentials again.');
+        return { username: credentials.username.trim(), password };
+    }
+
+    function progress() {
+        progressTimer = null;
+        if (!running || !savedCredentials) return;
+        if (!isActivePage()) { pause(); return; }
+        if (isAuthenticated()) { clearAttempts(); stop(); return; }
+        if (!isLoginSurface()) { stop(); return; }
+        if (hasLoginError()) {
+            stop('Qalam reported a login error. Check your saved credentials or log in manually.');
             return;
         }
-
-        if (result.qalamCredentials) {
-            const { username, password: encryptedPassword } = result.qalamCredentials;
-            console.log('NUST Qalam Auto-Login: Credentials found in storage');
-
-            // Decrypt password
-            const password = await decryptPassword(encryptedPassword);
-
-            if (!password) {
-                console.log('NUST Qalam Auto-Login: Failed to decrypt password');
-                return;
-            }
-
-            // Check if fields are empty (not already filled)
-            if (!usernameField.value && !passwordField.value) {
-                console.log('NUST Qalam Auto-Login: Filling credentials');
-
-                // Fill both fields immediately
-                fillField(usernameField, username);
-                fillField(passwordField, password);
-
-                console.log('NUST Qalam Auto-Login: Credentials filled');
-
-                // Click login button with delay for validation
-                if (loginButton) {
-                    setTimeout(() => {
-                        console.log('NUST Qalam Auto-Login: Clicking login button');
-                        loginButton.click();
-                    }, 1000); // Increased delay for Qalam
-                } else {
-                    // Fallback: Try to submit the form directly
-                    console.log('NUST Qalam Auto-Login: Login button not found, attempting form submission');
-                    const form = usernameField.closest('form') || passwordField.closest('form');
-                    if (form) {
-                        setTimeout(() => {
-                            console.log('NUST Qalam Auto-Login: Submitting form directly');
-                            form.submit();
-                        }, 1000);
-                    } else {
-                        console.log('NUST Qalam Auto-Login: No form found, credentials filled only');
-                    }
-                }
-            } else {
-                console.log('NUST Qalam Auto-Login: Fields already filled, skipping');
-            }
-        } else {
-            console.log('NUST Qalam Auto-Login: No credentials saved');
+        const fields = findLoginForm();
+        if (!fields) return;
+        if (!recordSubmission(true)) return;
+        const { form, username, password, action } = fields;
+        // Leave different credentials under the user's control. A remembered
+        // matching username can be completed with the saved password.
+        if ((username.value && username.value !== savedCredentials.username) ||
+            (password.value && password.value !== savedCredentials.password)) {
+            stop();
+            return;
         }
-    });
-}
-
-function fillField(field, value) {
-    // Focus the field
-    field.focus();
-
-    // Set value using native setter
-    setNativeValue(field, value);
-
-    // Trigger comprehensive events for form validation
-    const events = [
-        new Event('input', { bubbles: true, cancelable: true }),
-        new Event('change', { bubbles: true, cancelable: true }),
-        new KeyboardEvent('keydown', { bubbles: true, cancelable: true }),
-        new KeyboardEvent('keyup', { bubbles: true, cancelable: true }),
-        new Event('blur', { bubbles: true, cancelable: true }),
-        new FocusEvent('focusout', { bubbles: true, cancelable: true })
-    ];
-
-    events.forEach(event => field.dispatchEvent(event));
-}
-
-// Helper function to find username field
-function findUsernameField() {
-    const selectors = [
-        'input[placeholder="Username"]',
-        'input[type="text"]:not([type="hidden"])',
-        'input[name*="user" i]',
-        'input[id*="user" i]',
-        'input[autocomplete="username"]'
-    ];
-
-    return findFirstVisible(selectors);
-}
-
-// Helper function to find password field
-function findPasswordField() {
-    const selectors = [
-        'input[placeholder="Password"]',
-        'input[type="password"]',
-        'input[name*="pass" i]',
-        'input[id*="pass" i]',
-        'input[autocomplete="current-password"]'
-    ];
-
-    return findFirstVisible(selectors);
-}
-
-// Helper function to find the login button
-function findLoginButton() {
-    const selectors = [
-        'button[type="submit"]',
-        'input[type="submit"]',
-        'button.btn-primary',
-        'button.btn',
-        'a.btn'
-    ];
-
-    let button = findFirstVisible(selectors);
-
-    if (!button) {
-        // Fallback: find any button with "log" in its text
-        const buttons = document.querySelectorAll('button, input[type="submit"], a.btn');
-        for (const btn of buttons) {
-            const text = btn.textContent || btn.value || '';
-            if (text.toLowerCase().includes('log') && isVisible(btn)) {
-                button = btn;
-                break;
-            }
+        setField(username, savedCredentials.username);
+        setField(password, savedCredentials.password);
+        if (!username.value || !password.value || !form.checkValidity()) {
+            stop('The Qalam login form could not be completed. Check the fields or log in manually.');
+            return;
         }
-    }
-
-    return button;
-}
-
-// Find first visible element from selectors
-function findFirstVisible(selectors) {
-    for (const selector of selectors) {
+        if (!recordSubmission()) return;
+        // Stop observers before submission so input changes cannot log in twice.
+        // Keep all native fields, including csrf_token and any return URL.
+        stop();
         try {
-            const element = document.querySelector(selector);
-            if (element && isVisible(element)) {
-                console.log('NUST Qalam Auto-Login: Found element with selector:', selector);
-                return element;
-            }
-        } catch (e) {
-            // Invalid selector, skip
-            continue;
+            // Qalam's inline onsubmit only adds location.hash, but its page
+            // loader can cancel that event until scripts finish. Preserve the
+            // hash ourselves and submit the validated native form directly.
+            action.hash = location.hash;
+            form.action = action.href;
+            HTMLFormElement.prototype.submit.call(form);
+            verificationTimer = setTimeout(() => {
+                if (isAuthenticated()) { clearAttempts(); return; }
+                if (form.isConnected && isActivePage()) {
+                    showStatus('Qalam has not completed login yet. If it stays here, check the login form for an error.');
+                }
+            }, 10000);
+        } catch {
+            showStatus('Could not submit the Qalam login form. Try logging in manually.');
         }
     }
-    return null;
-}
 
-// Set value using native setter (works better with React/Angular forms)
-function setNativeValue(element, value) {
-    const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set ||
-        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set;
-
-    if (valueSetter) {
-        valueSetter.call(element, value);
-    } else {
-        element.value = value;
+    function scheduleProgress() {
+        if (running && progressTimer === null) progressTimer = setTimeout(progress, 0);
     }
-}
 
-// Check if element is visible
-function isVisible(element) {
-    if (!element) return false;
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        style.opacity !== '0';
-}
-
-// Decrypt password using Web Crypto API
-async function decryptPassword(encryptedPassword) {
-    if (!encryptedPassword) return null;
-
-    try {
-        // Get encryption key
-        const result = await chrome.storage.local.get('_encryptionKey');
-        if (!result._encryptionKey) return encryptedPassword; // Fallback for unencrypted
-
-        const key = await crypto.subtle.importKey(
-            'jwk',
-            result._encryptionKey,
-            { name: 'AES-GCM', length: 256 },
-            true,
-            ['decrypt']
-        );
-
-        // Convert from base64
-        const combined = Uint8Array.from(atob(encryptedPassword), c => c.charCodeAt(0));
-
-        // Extract IV and encrypted data
-        const iv = combined.slice(0, 12);
-        const encryptedData = combined.slice(12);
-
-        const decryptedData = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            key,
-            encryptedData
-        );
-
-        return new TextDecoder().decode(decryptedData);
-    } catch (error) {
-        console.error('Decryption failed:', error);
-        return encryptedPassword; // Fallback to original if decryption fails
+    async function start() {
+        if (finished || running || !isActivePage()) return;
+        if (isAuthenticated()) { clearAttempts(); stop(); return; }
+        if (!isLoginSurface()) return;
+        running = true;
+        const currentGeneration = ++generation;
+        observer = new MutationObserver(scheduleProgress);
+        observer.observe(document, {
+            childList: true, subtree: true, attributes: true,
+            attributeFilter: ['value', 'disabled', 'readonly', 'class', 'hidden']
+        });
+        // The observer handles parsed/inserted forms immediately; the fallback
+        // also catches input.value updates that produce no DOM mutation.
+        retryTimer = setInterval(scheduleProgress, 250);
+        deadlineTimer = setTimeout(() => stop(
+            'The Qalam login form is not ready. Try reloading the page or logging in manually.'
+        ), 30000);
+        try {
+            const credentials = await loadCredentials();
+            if (currentGeneration !== generation) return;
+            if (!credentials) { stop(); return; }
+            savedCredentials = credentials;
+            scheduleProgress();
+        } catch (error) {
+            if (currentGeneration === generation) stop(
+                error.message?.startsWith('Saved ') || error.message?.startsWith('No saved ') ||
+                error.message?.startsWith('Could not decrypt ') ? error.message :
+                    'Could not read saved credentials. Reload NustFlow in Chrome and refresh Qalam.'
+            );
+        }
     }
-}
+
+    // Speculative loads and back/forward restores need activation hooks;
+    // DOMContentLoaded alone misses documents Chrome has already loaded.
+    if (window.top !== window) return;
+    if (isAuthenticated()) clearAttempts();
+    // At document_start the dashboard's account menu/body may not exist yet.
+    // Clear the submission budget after it is parsed, without starting login there.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            if (isAuthenticated()) clearAttempts();
+        }, { once: true });
+    }
+    if (!isLoginSurface()) return;
+    document.addEventListener('DOMContentLoaded', scheduleProgress, { once: true });
+    document.addEventListener('prerenderingchange', start);
+    document.addEventListener('visibilitychange', () => {
+        if (isActivePage()) start();
+        else pause();
+    });
+    window.addEventListener('pagehide', pause);
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) finished = false;
+        start();
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !['nustCredentials', 'qalamCredentials', 'qalamUseSame', 'extensionEnabled']
+            .some(key => key in changes)) return;
+        pause();
+        clearAttempts();
+        finished = false;
+        start();
+    });
+    start();
+})();
