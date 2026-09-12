@@ -25,15 +25,20 @@ before(async () => {
     await popup.locator('#saveBtn').click();
     await popup.waitForFunction(() => document.querySelector('#status').textContent.includes('saved'));
     shared = await popup.evaluate(() => chrome.storage.local.get(null));
+    assert.equal(shared.qalamUseSame, true, 'Shared setup has completed');
     assert.notEqual(shared.qalamCredentials.password, password);
     await popup.locator('label.switch').filter({ has: popup.locator('#qalamSameToggle') }).click();
     assert.equal(await popup.locator('#qalamSameToggle').isChecked(), false);
     await popup.locator('#qalamUsername').fill('qalam-only-user');
     await popup.locator('#qalamPassword').fill('qalam-only-test-password');
+    // Wait for this save's completion, not the previous success message or a
+    // Promise-valued polling predicate that can resolve before storage is written.
+    await popup.locator('#status').evaluate(status => { status.textContent = ''; });
     await popup.locator('#saveBtn').click();
-    await popup.waitForFunction(async () => (await chrome.storage.local.get('qalamCredentials'))
-        .qalamCredentials.username === 'qalam-only-user');
+    await popup.waitForFunction(() => document.querySelector('#status').textContent.includes('saved'));
     separate = await popup.evaluate(() => chrome.storage.local.get(null));
+    assert.equal(separate.qalamUseSame, false, 'Separate setup has completed');
+    assert.equal(separate.qalamCredentials.username, 'qalam-only-user');
 });
 
 after(async () => { await context?.close(); });

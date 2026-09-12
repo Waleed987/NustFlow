@@ -9,6 +9,12 @@ class CredentialEncryption {
 
     // Generate or retrieve encryption key
     async getEncryptionKey() {
+        // The popup and welcome tabs can save at the same time on first install.
+        // Serialize key creation across this extension's pages so none is replaced.
+        return navigator.locks.request('nustflow-encryption-key', () => this.loadOrCreateKey());
+    }
+
+    async loadOrCreateKey() {
         // Try to get existing key from storage
         const result = await chrome.storage.local.get('_encryptionKey');
 
