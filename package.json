@@ -2,8 +2,9 @@
   "name": "nustflow",
   "private": true,
   "scripts": {
-    "test": "node --test --test-concurrency=1 tests/lms-login.test.cjs",
-    "test:live": "node tests/lms-login-live.cjs"
+    "test": "node --test --test-concurrency=1 tests/lms-login.test.cjs tests/qalam-login.test.cjs",
+    "test:live": "node tests/lms-login-live.cjs",
+    "test:qalam:live": "node tests/qalam-login-live.cjs"
   },
   "devDependencies": {
     "playwright": "^1.62.1"
